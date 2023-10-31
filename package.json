@@ -1,0 +1,43 @@
+{
+  "name": "pcm-player",
+  "version": "0.0.1",
+  "description": "A static site based on dumi",
+  "scripts": {
+    "start": "npm run dev",
+    "dev": "dumi dev",
+    "server": "node ./server/server.js",
+    "build": "dumi build",
+    "prepare": "husky install && dumi setup",
+    "build-player": "rollup ./src/index.js --file ./dist/index.js --format umd --name 'PCMPlayer'"
+  },
+  "authors": [
+    "516469920@qq.com"
+  ],
+  "license": "MIT",
+  "commitlint": {
+    "extends": [
+      "@commitlint/config-conventional"
+    ]
+  },
+  "lint-staged": {
+    "*.{md,json}": [
+      "prettier --write --no-error-on-unmatched-pattern"
+    ]
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^17.1.2",
+    "@commitlint/config-conventional": "^17.1.0",
+    "dumi": "^2.2.13",
+    "husky": "^8.0.1",
+    "lint-staged": "^13.0.3",
+    "prettier": "^2.7.1",
+    "rollup": "^4.1.4",
+    "ws": "^8.14.2"
+  },
+  "dependencies": {
+    "@react-three/drei": "^9.88.9",
+    "@react-three/fiber": "^8.15.9",
+    "lodash": "^4.17.21",
+    "three": "^0.158.0"
+  }
+}

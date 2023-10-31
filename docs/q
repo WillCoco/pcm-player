@@ -1,0 +1,433 @@
+#user  root;
+worker_processes  1;
+pid        logs/nginx.pid;
+error_log /dev/null;
+
+events {
+    worker_connections  1024;
+}
+
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+
+    log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+                      '$status $body_bytes_sent "$http_referer" '
+                      '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log off;
+
+    sendfile        off;
+    #tcp_nopush     on;
+    server_tokens   off;
+    #keepalive_timeout  0;
+    keepalive_timeout  65;
+
+    #gzip  on;
+    map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ''      close;
+    }
+
+    # dcm接口404问题处理
+    upstream tdpApiServer{
+       server 10.40.152.89:8999;
+    }
+
+    # V1 icms接口兼容
+    upstream icmsServer{
+       server 10.40.152.89:3028;
+    }
+    upstream DCM {
+       server 10.40.152.89:8080;
+    }
+    upstream DroidMe {
+       server 10.40.152.89:9922;
+    }
+    upstream DroidK {
+       server 10.40.152.89:9911;
+    }
+    upstream uap-server {
+       hash $http_x_forwarded_for;
+       server 10.40.152.89:8980;
+    }
+    upstream uap-manager {
+       hash $http_x_forwarded_for;
+       server 10.40.152.89:8880;
+    }
+    upstream uap-service {
+       ip_hash;
+       server 10.40.152.89:8888;
+    }
+    upstream dics {
+       server 10.40.152.89:8086;
+    }
+
+    upstream aiobs {
+       server 10.40.152.89:8094;
+    }
+    upstream emergency-call {
+       server 10.40.152.89:9099;
+    }
+    upstream aicc-api {
+       server 10.40.152.89:9002;
+    }
+    # 所有phonegateway地址
+    upstream phonegateway {
+       server 10.40.152.89:4061;
+    }
+
+    upstream cdr {
+       server 10.40.152.89:3015;
+    }
+
+    server {
+        listen 8098 ssl;
+        charset utf-8;
+        ssl_certificate ../ssl/server.crt;
+        ssl_certificate_key ../ssl/server.key;
+        ssl_protocols  TLSv1.2;
+
+        location / {
+           proxy_pass http://phonegateway;
+           proxy_http_version 1.1;
+           proxy_set_header Upgrade $http_upgrade;
+           proxy_set_header Connection $connection_upgrade;
+           proxy_set_header Host $http_host;
+           proxy_set_header X-Real-IP $remote_addr;
+           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+           proxy_set_header X-Forwarded-Proto $scheme;
+           proxy_read_timeout 180s;
+        }
+    }
+
+    server {
+        listen       8099;
+        server_name  _;
+
+        charset utf-8;
+
+        #access_log  logs/host.access.log  main;
+
+        location =/ {
+            try_files $uri /AIOBS/index.html;
+        }
+
+        location =/AIOBS/ {
+            try_files $uri /AIOBS/index.html;
+        }
+
+        location =/login.html {
+            try_files $uri /index.html;
+        }
+
+        location ~* /static/.*\.(gif|jpg|jpeg|png|css|map|js|ico|json|eot|svg|ttf|woff|woff2|docx|doc)$ {
+            root   /data/deploy_dir/dist/;
+            expires -1;
+        }
+
+        location ~* \.(htm|html|ico)$ {
+            root   /data/deploy_dir/dist/;
+            expires -1;
+        }
+
+	    location ^~ /tdp/ {
+	        root  /data/deploy_dir/dist/AIOBS;
+	        index  index.html index.htm;
+            add_header Access-Control-Allow-Origin *;
+            add_header Access-Control-Allow-Methods 'GET, POST, OPTIONS';
+            add_header Access-Control-Allow-Headers 'DNT,X-Mx-ReqToken,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization';
+            if ($request_method = 'OPTIONS') {
+                return 204;
+            }
+	    }
+
+        #tdp页面
+        location  ~* /tdp/.*\.(gif|jpg|jpeg|png|css|map|js|ico|json|eot|svg|ttf|woff|woff2|docx|doc|html|htm)$  {
+            root /data/deploy_dir/dist/AIOBS;
+            #前端地址路径
+            add_header Access-Control-Allow-Origin *;
+            add_header Access-Control-Allow-Methods 'GET, POST, OPTIONS';
+            add_header Access-Control-Allow-Headers 'DNT,X-Mx-ReqToken,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization';
+            if ($request_method = 'OPTIONS') {
+               return 204;
+            }
+        }
+
+        # V1 icms接口兼容
+        location /api/v1 {
+            proxy_pass http://icmsServer;
+            set $agent "Mozilla/5.0 (iPad; U; CPU OS 4_3_3 like Mac OS X; en-us) AppleWebKit/533.17.9 (KHTML, like Gecko) Version/5.0.2 Mobile/8J2 Safari/6533.18.5";
+            proxy_http_version 1.1;
+
+            proxy_pass_request_headers on;
+
+            client_max_body_size    1024m;
+            client_body_buffer_size 1024m;
+
+            proxy_redirect off;
+            proxy_connect_timeout   6000;
+            proxy_send_timeout      6000;
+            proxy_read_timeout      6000;
+            proxy_buffer_size       80k;
+            proxy_buffers           4 640k;
+            proxy_busy_buffers_size 1280k;
+            proxy_temp_file_write_size 1280k;
+            add_header Access-Control-Allow-Origin *;
+            proxy_set_header User-Agent $agent;
+            proxy_next_upstream http_502 http_504 error invalid_header;
+        }
+
+        location /tdpApi {
+            proxy_pass http://tdpApiServer;
+
+            proxy_http_version 1.1;
+
+            proxy_pass_request_headers on;
+            proxy_set_header Connection "";
+
+            client_max_body_size    30m;
+            client_body_buffer_size 128k;
+
+            proxy_redirect off;
+            proxy_connect_timeout   6000;
+            proxy_send_timeout      6000;
+            proxy_read_timeout      6000;
+            proxy_buffer_size       80k;
+            proxy_buffers           4 640k;
+            proxy_busy_buffers_size 1280k;
+            proxy_temp_file_write_size 1280k;
+
+            proxy_next_upstream http_502 http_504 error invalid_header;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Origin "";
+        }
+
+        location /AIOBS {
+            proxy_pass http://aiobs;
+            set $agent "Mozilla/5.0 (iPad; U; CPU OS 4_3_3 like Mac OS X; en-us) AppleWebKit/533.17.9 (KHTML, like Gecko) Version/5.0.2 Mobile/8J2 Safari/6533.18.5";
+            proxy_http_version 1.1;
+
+            proxy_pass_request_headers on;
+
+            client_max_body_size    1024m;
+            client_body_buffer_size 1024m;
+
+            proxy_redirect off;
+            proxy_connect_timeout   6000;
+            proxy_send_timeout      6000;
+            proxy_read_timeout      6000;
+            proxy_buffer_size       80k;
+            proxy_buffers           4 640k;
+            proxy_busy_buffers_size 1280k;
+            proxy_temp_file_write_size 1280k;
+            add_header Access-Control-Allow-Origin *;
+            proxy_set_header User-Agent $agent;
+            proxy_next_upstream http_502 http_504 error invalid_header;
+        }
+
+        location /aicc-api {
+            proxy_pass http://aicc-api/;
+            set $agent "Mozilla/5.0 (iPad; U; CPU OS 4_3_3 like Mac OS X; en-us) AppleWebKit/533.17.9 (KHTML, like Gecko) Version/5.0.2 Mobile/8J2 Safari/6533.18.5";
+            proxy_http_version 1.1;
+
+            proxy_pass_request_headers on;
+            #proxy_set_header Connection "";
+
+            client_max_body_size    1024m;
+            client_body_buffer_size 1024m;
+
+            proxy_redirect off;
+            proxy_connect_timeout   6000;
+            proxy_send_timeout      6000;
+            proxy_read_timeout      6000;
+            proxy_buffer_size       80k;
+            proxy_buffers           4 640k;
+            proxy_busy_buffers_size 1280k;
+            proxy_temp_file_write_size 1280k;
+            add_header Access-Control-Allow-Origin *;
+            proxy_set_header User-Agent $agent;
+            proxy_next_upstream http_502 http_504 error invalid_header;
+        }
+
+        location /cdr {
+            proxy_pass http://cdr;
+            set $agent "Mozilla/5.0 (iPad; U; CPU OS 4_3_3 like Mac OS X; en-us) AppleWebKit/533.17.9 (KHTML, like Gecko) Version/5.0.2 Mobile/8J2 Safari/6533.18.5";
+            proxy_http_version 1.1;
+
+            proxy_pass_request_headers on;
+            #proxy_set_header Connection "";
+
+            client_max_body_size    1024m;
+            client_body_buffer_size 1024m;
+
+            proxy_redirect off;
+            proxy_connect_timeout   6000;
+            proxy_send_timeout      6000;
+            proxy_read_timeout      6000;
+            proxy_buffer_size       80k;
+            proxy_buffers           4 640k;
+            proxy_busy_buffers_size 1280k;
+            proxy_temp_file_write_size 1280k;
+            add_header Access-Control-Allow-Origin *;
+            proxy_set_header User-Agent $agent;
+            proxy_next_upstream http_502 http_504 error invalid_header;
+        }
+
+        location /dcm {
+	        if ($request_method !~ ^(GET|HEAD|POST|DELETE)$ ) {
+        	    return 403;
+    	    }
+            proxy_pass http://DCM;
+
+            proxy_http_version 1.1;
+
+            proxy_pass_request_headers on;
+            proxy_set_header Connection "";
+
+            client_max_body_size    30m;
+            client_body_buffer_size 128k;
+
+            proxy_redirect off;
+            proxy_connect_timeout   6000;
+            proxy_send_timeout      6000;
+            proxy_read_timeout      6000;
+            proxy_buffer_size       80k;
+            proxy_buffers           4 640k;
+            proxy_busy_buffers_size 1280k;
+            proxy_temp_file_write_size 1280k;
+
+            proxy_next_upstream http_502 http_504 error invalid_header;
+
+            # 测试关闭 transfer-encoding: chunked
+            # chunked_transfer_encoding off;
+        }
+	    location /DroidMe {
+            proxy_pass http://DroidMe;
+
+            proxy_http_version 1.1;
+
+            proxy_pass_request_headers on;
+            proxy_set_header Connection "";
+
+            client_max_body_size    30m;
+            client_body_buffer_size 128k;
+
+            proxy_redirect off;
+            proxy_connect_timeout   6000;
+            proxy_send_timeout      6000;
+            proxy_read_timeout      6000;
+            proxy_buffer_size       80k;
+            proxy_buffers           4 640k;
+            proxy_busy_buffers_size 1280k;
+            proxy_temp_file_write_size 1280k;
+
+            proxy_next_upstream http_502 http_504 error invalid_header;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Origin "";
+        }
+
+        location /DroidK {
+            if ($request_method !~ ^(GET|HEAD|POST|DELETE)$ ) {
+                return 403;
+            }
+            proxy_pass http://DroidK;
+
+            proxy_http_version 1.1;
+
+            proxy_pass_request_headers on;
+
+            client_max_body_size    30m;
+            client_body_buffer_size 128k;
+
+            proxy_redirect off;
+            proxy_connect_timeout   6000;
+            proxy_send_timeout      6000;
+            proxy_read_timeout      6000;
+            proxy_buffer_size       80k;
+            proxy_buffers           4 640k;
+            proxy_busy_buffers_size 1280k;
+            proxy_temp_file_write_size 1280k;
+
+            proxy_next_upstream http_502 http_504 error invalid_header;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Origin "";
+        }
+
+	    location /uap-server/ {
+            proxy_pass http://uap-server/uap-server/;
+
+            proxy_http_version 1.1;
+
+	        proxy_set_header Host $host:$server_port;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header Connection "";
+
+            proxy_pass_request_headers on;
+        }
+	    location /uap-manager/ {
+            proxy_pass http://uap-manager/uap-manager/;
+
+            proxy_http_version 1.1;
+
+            proxy_pass_request_headers on;
+
+	        proxy_set_header Host $host:$server_port;
+            proxy_set_header Connection "";
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        }
+	    location /uap-service/ {
+            proxy_pass http://uap-service/uap-service/;
+
+            proxy_http_version 1.1;
+
+            proxy_pass_request_headers on;
+
+	        proxy_set_header Host $host:$server_port;
+            proxy_set_header Connection "";
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        }
+
+        location /dics {
+            if ($request_method !~ ^(GET|HEAD|POST|PUT|DELETE)$ ) {
+                return 403;
+            }
+            proxy_pass http://dics;
+
+            proxy_http_version 1.1;
+
+            proxy_pass_request_headers on;
+
+            client_max_body_size    30m;
+            client_body_buffer_size 128k;
+
+            proxy_redirect off;
+            proxy_connect_timeout   6000;
+            proxy_send_timeout      6000;
+            proxy_read_timeout      6000;
+            proxy_buffer_size       80k;
+            proxy_buffers           4 640k;
+            proxy_busy_buffers_size 1280k;
+            proxy_temp_file_write_size 1280k;
+
+            proxy_next_upstream http_502 http_504 error invalid_header;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Origin "";
+        }
+
+        #error_page  404              /404.html;
+
+        # redirect server error pages to the static page /50x.html
+        error_page   500 502 503 504  /50x.html;
+        location = /50x.html {
+            root   html;
+        }
+    }
+}
